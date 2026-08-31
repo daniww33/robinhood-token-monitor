@@ -4,7 +4,8 @@ Monitors Robinhood Stock Tokens for:
 
 - newly tokenized stocks or ETFs from `https://api.robinhood.com/rhj/assets`
 - new mint events for existing tokens using ERC-20 `Transfer(0x0, to, amount)` logs on Robinhood Chain
-- Discord webhook alerts
+- Telegram alerts
+- optional Discord webhook alerts
 
 ## Deploy On Railway
 
@@ -17,7 +18,8 @@ node monitor.mjs
 Add these Railway variables:
 
 ```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+TELEGRAM_BOT_TOKEN=1234567890:your_bot_token
+TELEGRAM_CHAT_ID=123456789
 RH_RPC_URL=https://robinhood-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY
 POLL_INTERVAL_MS=300000
 ALERT_ON_FIRST_RUN=false
@@ -28,6 +30,13 @@ For persistent state, add a Railway volume. The monitor automatically uses `$RAI
 ```bash
 STATE_FILE=/data/state.json
 ```
+
+## Telegram Setup
+
+1. In Telegram, message `@BotFather` and create a bot with `/newbot`.
+2. Copy the bot token into `TELEGRAM_BOT_TOKEN`.
+3. Message your new bot once.
+4. Get your chat ID from `https://api.telegram.org/botYOUR_TOKEN/getUpdates`, then put it in `TELEGRAM_CHAT_ID`.
 
 ## First Run Behavior
 
