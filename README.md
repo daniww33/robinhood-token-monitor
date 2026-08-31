@@ -23,6 +23,7 @@ TELEGRAM_CHAT_ID=123456789
 RH_RPC_URL=https://robinhood-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY
 POLL_INTERVAL_MS=300000
 ALERT_ON_FIRST_RUN=false
+MINT_ALERT_MODE=first_per_contract
 ```
 
 For persistent state, add a Railway volume. The monitor automatically uses `$RAILWAY_VOLUME_MOUNT_PATH/state.json` when a Railway volume exists. You can also explicitly set:
@@ -30,6 +31,14 @@ For persistent state, add a Railway volume. The monitor automatically uses `$RAI
 ```bash
 STATE_FILE=/data/state.json
 ```
+
+## Mint Alert Modes
+
+`MINT_ALERT_MODE=all` alerts on every mint event.
+
+`MINT_ALERT_MODE=first_per_contract` alerts only the first time the monitor observes a mint for each token contract. This is the best setting when you care about newly minted stock tokens/pairs, not repeat supply top-ups.
+
+`MINT_ALERT_MODE=off` disables mint alerts while keeping new asset/deployment alerts.
 
 ## Telegram Setup
 
