@@ -18,6 +18,8 @@ const config = {
   runOnce: boolEnv("RUN_ONCE", false) || process.argv.includes("--once"),
   alertOnFirstRun: boolEnv("ALERT_ON_FIRST_RUN", false),
   mintAlertMode: env("MINT_ALERT_MODE", "all"),
+  mintWatchSymbols: listEnv("MINT_WATCH_SYMBOLS").map((symbol) => symbol.toUpperCase()),
+  mintWatchContracts: listEnv("MINT_WATCH_CONTRACTS").map(normalizeAddress),
   confirmations: intEnv("CONFIRMATIONS", 20),
   blockChunkSize: intEnv("BLOCK_CHUNK_SIZE", 2000),
   addressChunkSize: intEnv("ADDRESS_CHUNK_SIZE", 75),
@@ -51,6 +53,9 @@ function intEnv(name, fallback) {
 function boolEnv(name, fallback) {
   const raw = process.env[name];
   return raw ? ["1", "true", "yes", "on"].includes(raw.toLowerCase()) : fallback;
+}
+function listEnv(name) {
+  return (process.env[name] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
 }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function hex(n) { return `0x${n.toString(16)}`; }
@@ -194,7 +199,8 @@ function mintAlerts(logs, contractsByAddress, mintedContractsByAddress, firstRun
   return logs.flatMap((log) => {
     const token = contractsByAddress[normalizeAddress(log.address)] ?? {};
     const contractAddress = normalizeAddress(log.address);
-    if (config.mintAlertMode === "first_per_contract" && mintedContractsByAddress[contractAddress]) return [];
+    const watched = config.mintWatchContracts.includes(contractAddress) || config.mintWatchSymbols.includes((token.tokenSymbol ?? "").toUpperCase());
+    if (config.mintAlertMode === "first_per_contract" && mintedContractsByAddress[contractAddress] && !watched) return [];
     const amount = formatUnits(BigInt(log.data || "0x0").toString(), token.tokenDecimals ?? 18);
     const recipient = log.topics?.[2] ? addressFromTopic(log.topics[2]) : "unknown";
     return [{ type: "mint", title: `Mint detected: ${token.tokenSymbol ?? log.address}`, description: token.tokenName ?? "Robinhood Stock Token", fields: [
