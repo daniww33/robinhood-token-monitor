@@ -21,6 +21,7 @@ Edit `.env` and set:
 ```bash
 TELEGRAM_BOT_TOKEN=1234567890:your_bot_token
 TELEGRAM_CHAT_ID=123456789
+TELEGRAM_CHAT_IDS=123456789,-1001234567890
 ```
 
 Run continuously:
@@ -78,6 +79,7 @@ The first deploy seeds `/data/state.json` without alerting for the full existing
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | optional | Telegram bot token for alerts. |
 | `TELEGRAM_CHAT_ID` | optional | Telegram chat ID to receive alerts. |
+| `TELEGRAM_CHAT_IDS` | optional | Comma-separated Telegram chat IDs for private chats, groups, or channels. Overrides `TELEGRAM_CHAT_ID` when set. |
 | `DISCORD_WEBHOOK_URL` | optional | Discord webhook URL for alerts. |
 | `RH_ASSETS_URL` | `https://api.robinhood.com/rhj/assets` | Robinhood asset metadata endpoint. |
 | `RH_RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` | Robinhood Chain JSON-RPC endpoint. |
