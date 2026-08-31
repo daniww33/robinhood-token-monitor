@@ -24,6 +24,7 @@ RH_RPC_URL=https://robinhood-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY
 POLL_INTERVAL_MS=300000
 ALERT_ON_FIRST_RUN=false
 MINT_ALERT_MODE=first_per_contract
+MINT_WATCH_SYMBOLS=GPRO
 ```
 
 For persistent state, add a Railway volume. The monitor automatically uses `$RAILWAY_VOLUME_MOUNT_PATH/state.json` when a Railway volume exists. You can also explicitly set:
@@ -39,6 +40,10 @@ STATE_FILE=/data/state.json
 `MINT_ALERT_MODE=first_per_contract` alerts only the first time the monitor observes a mint for each token contract. This is the best setting when you care about newly minted stock tokens/pairs, not repeat supply top-ups.
 
 `MINT_ALERT_MODE=off` disables mint alerts while keeping new asset/deployment alerts.
+
+`MINT_WATCH_SYMBOLS=GPRO` always alerts for matching symbols even when `MINT_ALERT_MODE=first_per_contract` would suppress repeat mints. Use commas for multiple symbols.
+
+`MINT_WATCH_CONTRACTS=0x...` does the same for exact token contract addresses.
 
 ## Telegram Setup
 
