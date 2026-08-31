@@ -60,9 +60,9 @@ RH_RPC_URL=https://robinhood-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY
 STATE_FILE=/data/state.json
 POLL_INTERVAL_MS=300000
 ALERT_ON_FIRST_RUN=false
-SYMBOL_FILTER=GPRO
+SYMBOL_FILTER=GPRO,HOOD
 MINT_ALERT_MODE=first_per_contract
-MINT_WATCH_SYMBOLS=GPRO
+MINT_WATCH_SYMBOLS=GPRO,HOOD
 ```
 
 Railway will use `railway.json` and run:
@@ -87,7 +87,7 @@ The first deploy seeds `/data/state.json` without alerting for the full existing
 | `STATE_FILE` | `./state.json` | Snapshot and block cursor file. |
 | `RUN_ONCE` | `false` | Exit after one cycle. |
 | `ALERT_ON_FIRST_RUN` | `false` | Send alerts for initial catalog and historical mint scan. |
-| `SYMBOL_FILTER` | empty | Comma-separated token symbols to alert on. When set to `GPRO`, all non-GPRO alerts are suppressed. |
+| `SYMBOL_FILTER` | empty | Comma-separated token symbols to alert on. When set to `GPRO,HOOD`, all other token alerts are suppressed. |
 | `MINT_ALERT_MODE` | `all` | Use `all`, `first_per_contract`, or `off` for mint alerts. |
 | `MINT_WATCH_SYMBOLS` | empty | Comma-separated token symbols whose mints should always alert. |
 | `MINT_WATCH_CONTRACTS` | empty | Comma-separated token contract addresses whose mints should always alert. |
