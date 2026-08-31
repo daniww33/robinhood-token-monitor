@@ -8,6 +8,8 @@ const ZERO_TOPIC = "0x0000000000000000000000000000000000000000000000000000000000
 await loadEnvFile(".env");
 
 const config = {
+  telegramBotToken: env("TELEGRAM_BOT_TOKEN", ""),
+  telegramChatId: env("TELEGRAM_CHAT_ID", ""),
   discordWebhookUrl: env("DISCORD_WEBHOOK_URL", ""),
   assetsUrl: env("RH_ASSETS_URL", "https://api.robinhood.com/rhj/assets"),
   rpcUrl: env("RH_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
@@ -65,8 +67,10 @@ function formatUnits(raw, decimals = 18) {
   const whole = value / scale;
   const fraction = value % scale;
   if (fraction === 0n) return whole.toString();
-  const fractionText = fraction.toString().padStart(decimals, "0").replace(/0+$/, "").slice(0, 8);
-  return `${whole}.${fractionText}`;
+  return `${whole}.${fraction.toString().padStart(decimals, "0").replace(/0+$/, "").slice(0, 8)}`;
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 async function readState(file) {
@@ -83,7 +87,6 @@ async function writeState(file, state) {
   await fs.writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`);
   await fs.rename(tmp, file);
 }
-
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { accept: "application/json", "user-agent": "robinhood-token-monitor/1.0", ...(options.headers ?? {}) } });
   if (!response.ok) throw new Error(`${url} returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
@@ -130,7 +133,6 @@ async function fetchAssets() {
     deployments: asset.deployments.map((deployment) => ({ contractAddress: deployment.contractAddress, chainId: deployment.chainId, networkName: deployment.networkName }))
   }));
 }
-
 function indexAssets(assets) {
   const assetsById = {};
   const contractsByAddress = {};
@@ -143,7 +145,6 @@ function indexAssets(assets) {
   }
   return { assetsById, contractsByAddress };
 }
-
 function assetFields(asset) {
   const contracts = (asset.deployments ?? []).map((deployment) => deployment.contractAddress).filter(Boolean);
   return [
@@ -153,7 +154,6 @@ function assetFields(asset) {
     { name: "Contract", value: contracts.length > 0 ? contracts.join("\n").slice(0, 1024) : "none" }
   ];
 }
-
 function detectAssetChanges(previous, current, firstRun) {
   if (firstRun && !config.alertOnFirstRun) return [];
   const alerts = [];
@@ -170,7 +170,6 @@ function detectAssetChanges(previous, current, firstRun) {
   }
   return alerts;
 }
-
 async function getLatestSafeBlock() {
   return Math.max(0, fromHexQuantity(await rpc("eth_blockNumber", [])) - config.confirmations);
 }
@@ -202,31 +201,47 @@ function mintAlerts(logs, contractsByAddress, firstRun) {
   });
 }
 
-async function sendDiscord(alerts) {
-  if (alerts.length === 0) return;
-  if (!config.discordWebhookUrl || config.discordWebhookUrl.includes("...")) {
-    console.log(`DISCORD_WEBHOOK_URL is not set; ${alerts.length} alert(s) not sent.`);
-    for (const alert of alerts) console.log(`[${alert.type}] ${alert.title} - ${alert.description}`);
-    return;
+async function sendTelegram(alerts) {
+  if (alerts.length === 0 || !config.telegramBotToken || !config.telegramChatId || config.telegramBotToken.includes("your_bot_token")) return;
+  const url = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;
+  for (const alert of alerts) {
+    const text = [`<b>${escapeHtml(alert.title)}</b>`, alert.description ? escapeHtml(alert.description) : "", alert.fields.map((field) => `<b>${escapeHtml(field.name)}:</b> ${escapeHtml(field.value)}`).join("\n")].filter(Boolean).join("\n\n").slice(0, 4096);
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: config.telegramChatId, text, parse_mode: "HTML", disable_web_page_preview: true }) });
+    if (!response.ok) throw new Error(`Telegram returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
   }
+}
+async function sendDiscord(alerts) {
+  if (alerts.length === 0 || !config.discordWebhookUrl || config.discordWebhookUrl.includes("...")) return;
   for (const batch of chunks(alerts, 10)) {
     const response = await fetch(config.discordWebhookUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "Robinhood Token Monitor", embeds: batch.map((alert) => ({ title: alert.title, description: alert.description, color: alert.type === "mint" ? 0x00a86b : 0x1f8b4c, timestamp: new Date().toISOString(), fields: alert.fields.slice(0, 25) })) }) });
     if (!response.ok) throw new Error(`Discord webhook returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
   }
+}
+async function sendNotifications(alerts) {
+  if (alerts.length === 0) return;
+  const hasTelegram = config.telegramBotToken && config.telegramChatId && !config.telegramBotToken.includes("your_bot_token");
+  const hasDiscord = config.discordWebhookUrl && !config.discordWebhookUrl.includes("...");
+  if (!hasTelegram && !hasDiscord) {
+    console.log(`No alert destination is configured; ${alerts.length} alert(s) not sent.`);
+    for (const alert of alerts) console.log(`[${alert.type}] ${alert.title} - ${alert.description}`);
+    return;
+  }
+  await Promise.all([sendTelegram(alerts), sendDiscord(alerts)]);
 }
 
 async function pollOnce() {
   const state = await readState(config.stateFile);
   const firstRun = !state.initializedAt;
   console.log(`[${new Date().toISOString()}] Fetching Robinhood assets...`);
-  const current = indexAssets(await fetchAssets());
+  const assets = await fetchAssets();
+  const current = indexAssets(assets);
   const latestSafeBlock = await getLatestSafeBlock();
   const fromBlock = state.lastScannedBlock === null ? latestSafeBlock : Math.min(state.lastScannedBlock + 1, latestSafeBlock);
-  console.log(`[${new Date().toISOString()}] Assets=${Object.keys(current.assetsById).length}, scan=${fromBlock}-${latestSafeBlock}`);
+  console.log(`[${new Date().toISOString()}] Assets=${assets.length}, scan=${fromBlock}-${latestSafeBlock}`);
   const assetAlerts = detectAssetChanges(state, current, firstRun);
   const logs = firstRun && !config.alertOnFirstRun ? [] : await getMintLogs(current.contractsByAddress, fromBlock, latestSafeBlock);
   const alerts = [...assetAlerts, ...mintAlerts(logs, current.contractsByAddress, firstRun)];
-  await sendDiscord(alerts);
+  await sendNotifications(alerts);
   const now = new Date().toISOString();
   await writeState(config.stateFile, { version: 1, assetsById: current.assetsById, contractsByAddress: current.contractsByAddress, lastScannedBlock: latestSafeBlock, initializedAt: state.initializedAt ?? now, updatedAt: now });
   console.log(`[${new Date().toISOString()}] Done. alerts=${alerts.length}, mintLogs=${logs.length}`);
@@ -238,7 +253,7 @@ async function main() {
       await pollOnce();
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ${error.stack || error.message}`);
-      try { await sendDiscord([{ type: "error", title: "Robinhood Token Monitor error", description: error.message, fields: [] }]); } catch (discordError) { console.error(`[${new Date().toISOString()}] Discord error alert failed: ${discordError.stack || discordError.message}`); }
+      try { await sendNotifications([{ type: "error", title: "Robinhood Token Monitor error", description: error.message, fields: [] }]); } catch (notifyError) { console.error(`[${new Date().toISOString()}] Alert error failed: ${notifyError.stack || notifyError.message}`); }
     }
     if (config.runOnce) break;
     await sleep(config.pollIntervalMs);
