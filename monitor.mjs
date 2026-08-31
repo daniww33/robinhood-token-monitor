@@ -17,6 +17,7 @@ const config = {
   stateFile: env("STATE_FILE", process.env.RAILWAY_VOLUME_MOUNT_PATH ? `${process.env.RAILWAY_VOLUME_MOUNT_PATH}/state.json` : "./state.json"),
   runOnce: boolEnv("RUN_ONCE", false) || process.argv.includes("--once"),
   alertOnFirstRun: boolEnv("ALERT_ON_FIRST_RUN", false),
+  mintAlertMode: env("MINT_ALERT_MODE", "all"),
   confirmations: intEnv("CONFIRMATIONS", 20),
   blockChunkSize: intEnv("BLOCK_CHUNK_SIZE", 2000),
   addressChunkSize: intEnv("ADDRESS_CHUNK_SIZE", 75),
@@ -75,9 +76,11 @@ function escapeHtml(value) {
 
 async function readState(file) {
   try {
-    return JSON.parse(await fs.readFile(file, "utf8"));
+    const state = JSON.parse(await fs.readFile(file, "utf8"));
+    state.mintedContractsByAddress = state.mintedContractsByAddress ?? {};
+    return state;
   } catch (error) {
-    if (error.code === "ENOENT") return { version: 1, assetsById: {}, contractsByAddress: {}, lastScannedBlock: null, initializedAt: null, updatedAt: null };
+    if (error.code === "ENOENT") return { version: 1, assetsById: {}, contractsByAddress: {}, mintedContractsByAddress: {}, lastScannedBlock: null, initializedAt: null, updatedAt: null };
     throw error;
   }
 }
@@ -185,20 +188,35 @@ async function getMintLogs(contractsByAddress, fromBlock, toBlock) {
   }
   return logs;
 }
-function mintAlerts(logs, contractsByAddress, firstRun) {
+function mintAlerts(logs, contractsByAddress, mintedContractsByAddress, firstRun) {
   if (firstRun && !config.alertOnFirstRun) return [];
-  return logs.map((log) => {
+  if (config.mintAlertMode === "off") return [];
+  return logs.flatMap((log) => {
     const token = contractsByAddress[normalizeAddress(log.address)] ?? {};
+    const contractAddress = normalizeAddress(log.address);
+    if (config.mintAlertMode === "first_per_contract" && mintedContractsByAddress[contractAddress]) return [];
     const amount = formatUnits(BigInt(log.data || "0x0").toString(), token.tokenDecimals ?? 18);
     const recipient = log.topics?.[2] ? addressFromTopic(log.topics[2]) : "unknown";
-    return { type: "mint", title: `Mint detected: ${token.tokenSymbol ?? log.address}`, description: token.tokenName ?? "Robinhood Stock Token", fields: [
+    return [{ type: "mint", title: `Mint detected: ${token.tokenSymbol ?? log.address}`, description: token.tokenName ?? "Robinhood Stock Token", fields: [
       { name: "Symbol", value: token.tokenSymbol ?? "unknown", inline: true },
       { name: "Amount", value: amount, inline: true },
       { name: "Recipient", value: recipient },
       { name: "Contract", value: log.address },
       { name: "Transaction", value: `https://robinhoodchain.blockscout.com/tx/${log.transactionHash}` }
-    ] };
+    ] }];
   });
+}
+function updateMintedContracts(state, logs) {
+  state.mintedContractsByAddress = state.mintedContractsByAddress ?? {};
+  const now = new Date().toISOString();
+  for (const log of logs) {
+    const contractAddress = normalizeAddress(log.address);
+    state.mintedContractsByAddress[contractAddress] = {
+      firstSeenAt: state.mintedContractsByAddress[contractAddress]?.firstSeenAt ?? now,
+      latestSeenAt: now,
+      latestTransactionHash: log.transactionHash
+    };
+  }
 }
 
 async function sendTelegram(alerts) {
@@ -240,10 +258,11 @@ async function pollOnce() {
   console.log(`[${new Date().toISOString()}] Assets=${assets.length}, scan=${fromBlock}-${latestSafeBlock}`);
   const assetAlerts = detectAssetChanges(state, current, firstRun);
   const logs = firstRun && !config.alertOnFirstRun ? [] : await getMintLogs(current.contractsByAddress, fromBlock, latestSafeBlock);
-  const alerts = [...assetAlerts, ...mintAlerts(logs, current.contractsByAddress, firstRun)];
+  const alerts = [...assetAlerts, ...mintAlerts(logs, current.contractsByAddress, state.mintedContractsByAddress ?? {}, firstRun)];
+  updateMintedContracts(state, logs);
   await sendNotifications(alerts);
   const now = new Date().toISOString();
-  await writeState(config.stateFile, { version: 1, assetsById: current.assetsById, contractsByAddress: current.contractsByAddress, lastScannedBlock: latestSafeBlock, initializedAt: state.initializedAt ?? now, updatedAt: now });
+  await writeState(config.stateFile, { version: 1, assetsById: current.assetsById, contractsByAddress: current.contractsByAddress, mintedContractsByAddress: state.mintedContractsByAddress ?? {}, lastScannedBlock: latestSafeBlock, initializedAt: state.initializedAt ?? now, updatedAt: now });
   console.log(`[${new Date().toISOString()}] Done. alerts=${alerts.length}, mintLogs=${logs.length}`);
 }
 
