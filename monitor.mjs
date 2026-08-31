@@ -13,6 +13,7 @@ const config = {
   discordWebhookUrl: env("DISCORD_WEBHOOK_URL", ""),
   telegramBotToken: env("TELEGRAM_BOT_TOKEN", ""),
   telegramChatId: env("TELEGRAM_CHAT_ID", ""),
+  telegramChatIds: listEnv("TELEGRAM_CHAT_IDS"),
   assetsUrl: env("RH_ASSETS_URL", "https://api.robinhood.com/rhj/assets"),
   rpcUrl: env("RH_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
   pollIntervalMs: intEnv("POLL_INTERVAL_MS", 300_000),
@@ -478,30 +479,38 @@ async function sendDiscord(alerts) {
 async function sendTelegram(alerts) {
   if (alerts.length === 0) return;
 
+  const chatIds = config.telegramChatIds.length > 0
+    ? config.telegramChatIds
+    : config.telegramChatId
+      ? [config.telegramChatId]
+      : [];
+
   if (
     !config.telegramBotToken ||
-    !config.telegramChatId ||
+    chatIds.length === 0 ||
     config.telegramBotToken.includes("your_bot_token")
   ) {
     return;
   }
 
   const url = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;
-  for (const alert of alerts) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: config.telegramChatId,
-        text: telegramAlertText(alert),
-        parse_mode: "HTML",
-        disable_web_page_preview: true
-      })
-    });
+  for (const chatId of chatIds) {
+    for (const alert of alerts) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: telegramAlertText(alert),
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        })
+      });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Telegram returned ${response.status}: ${text.slice(0, 500)}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Telegram returned ${response.status} for chat ${chatId}: ${text.slice(0, 500)}`);
+      }
     }
   }
 }
@@ -533,7 +542,7 @@ async function sendNotifications(alerts) {
 
   const hasTelegram =
     config.telegramBotToken &&
-    config.telegramChatId &&
+    (config.telegramChatIds.length > 0 || config.telegramChatId) &&
     !config.telegramBotToken.includes("your_bot_token");
   const hasDiscord =
     config.discordWebhookUrl && !config.discordWebhookUrl.includes("...");
