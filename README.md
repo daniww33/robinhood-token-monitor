@@ -92,8 +92,8 @@ The first deploy seeds `/data/state.json` without alerting for the full existing
 | `MINT_WATCH_SYMBOLS` | empty | Comma-separated token symbols whose mints should always alert. |
 | `MINT_WATCH_CONTRACTS` | empty | Comma-separated token contract addresses whose mints should always alert. |
 | `CONFIRMATIONS` | `20` | Blocks to wait before scanning logs. |
-| `BLOCK_CHUNK_SIZE` | `2000` | Max block span per `eth_getLogs` request. |
-| `ADDRESS_CHUNK_SIZE` | `75` | Max token contracts per `eth_getLogs` request. |
+| `BLOCK_CHUNK_SIZE` | `500` | Max block span per `eth_getLogs` request. |
+| `ADDRESS_CHUNK_SIZE` | `25` | Max token contracts per `eth_getLogs` request. |
 | `RPC_REQUEST_DELAY_MS` | `300` | Delay before each RPC request to reduce public RPC rate-limit errors. |
 | `RPC_MAX_RETRIES` | `5` | Retry count for `429` and transient RPC errors. |
 
