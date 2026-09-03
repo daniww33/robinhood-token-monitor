@@ -186,15 +186,29 @@ async function rpc(method, params) {
     if (waitFor > 0) await sleep(waitFor);
     lastRpcRequestAt = Date.now();
 
-    const response = await fetch(config.rpcUrl, {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "user-agent": "robinhood-token-monitor/1.0"
-      },
-      body: JSON.stringify(body)
-    });
+    let response;
+    try {
+      response = await fetch(config.rpcUrl, {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "content-type": "application/json",
+          "user-agent": "robinhood-token-monitor/1.0"
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      if (attempt < config.rpcMaxRetries) {
+        await sleep(1_000 * 2 ** attempt);
+        continue;
+      }
+
+      throw new Error(
+        `RPC ${method} network request failed after ${config.rpcMaxRetries + 1} attempt(s): ${
+          error.message
+        }`
+      );
+    }
 
     const text = await response.text();
     let json;
