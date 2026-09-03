@@ -30,8 +30,8 @@ const config = {
   mintWatchSymbols: listEnv("MINT_WATCH_SYMBOLS").map((symbol) => symbol.toUpperCase()),
   mintWatchContracts: listEnv("MINT_WATCH_CONTRACTS").map(normalizeAddress),
   confirmations: intEnv("CONFIRMATIONS", 20),
-  blockChunkSize: intEnv("BLOCK_CHUNK_SIZE", 2_000),
-  addressChunkSize: intEnv("ADDRESS_CHUNK_SIZE", 75),
+  blockChunkSize: intEnv("BLOCK_CHUNK_SIZE", 500),
+  addressChunkSize: intEnv("ADDRESS_CHUNK_SIZE", 25),
   rpcRequestDelayMs: intEnv("RPC_REQUEST_DELAY_MS", 300),
   rpcMaxRetries: intEnv("RPC_MAX_RETRIES", 5)
 };
@@ -357,26 +357,48 @@ function assetFields(asset) {
 }
 
 async function getMintLogs(contractsByAddress, fromBlock, toBlock) {
-  const addresses = Object.keys(contractsByAddress);
+  const addresses = Object.entries(contractsByAddress)
+    .filter(([, token]) => symbolAllowed(token.tokenSymbol))
+    .map(([address]) => address);
   if (addresses.length === 0 || fromBlock > toBlock) return [];
 
   const logs = [];
   for (let blockStart = fromBlock; blockStart <= toBlock; blockStart += config.blockChunkSize) {
     const blockEnd = Math.min(toBlock, blockStart + config.blockChunkSize - 1);
     for (const addressChunk of chunks(addresses, config.addressChunkSize)) {
-      const result = await rpc("eth_getLogs", [
-        {
-          fromBlock: hex(blockStart),
-          toBlock: hex(blockEnd),
-          address: addressChunk,
-          topics: [TRANSFER_TOPIC, ZERO_TOPIC]
-        }
-      ]);
-      logs.push(...result);
+      logs.push(...await getMintLogsChunk(addressChunk, blockStart, blockEnd));
     }
   }
 
   return logs;
+}
+
+async function getMintLogsChunk(addresses, fromBlock, toBlock) {
+  try {
+    return await rpc("eth_getLogs", [
+      {
+        fromBlock: hex(fromBlock),
+        toBlock: hex(toBlock),
+        address: addresses,
+        topics: [TRANSFER_TOPIC, ZERO_TOPIC]
+      }
+    ]);
+  } catch (error) {
+    if (!isInvalidBlockRangeError(error) || fromBlock >= toBlock) {
+      throw error;
+    }
+
+    const midpoint = Math.floor((fromBlock + toBlock) / 2);
+    const first = await getMintLogsChunk(addresses, fromBlock, midpoint);
+    const second = await getMintLogsChunk(addresses, midpoint + 1, toBlock);
+    return [...first, ...second];
+  }
+}
+
+function isInvalidBlockRangeError(error) {
+  return String(error?.message ?? "")
+    .toLowerCase()
+    .includes("invalid block range");
 }
 
 function chunks(items, size) {
